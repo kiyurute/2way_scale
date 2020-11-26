@@ -1,0 +1,264 @@
+
+//7セグメントLED-------------------------------------//
+#include "TM1637.h"
+#define CLK 25//pins definitions for TM1637 and can be changed to other ports
+#define DIO 32
+TM1637 tm1637(CLK,DIO);
+//---------------------------------------------------//
+
+
+//---------------------------------------------------//
+// ロードセル　シングルポイント（ビーム型）　ＳＣ６１６Ｃ　５００ｇ[P-12532]
+#include <Arduino.h>
+
+void AE_HX711_Init(void);
+void AE_HX711_Reset(void);
+long AE_HX711_Read(void);
+long AE_HX711_Averaging(long adc,char num);
+float AE_HX711_getGram(char num);
+
+#define pin_dout  12
+#define pin_slk   14
+
+#define OUT_VOL   0.0007f   //定格出力 [V]
+#define LOAD      500.0f    //定格容量 [g]
+//---------------------------------------------------//
+
+//switch---------------------------------------------//
+#define switchpin 35
+//---------------------------------------------------//
+
+//blynk----------------------------------------------------//
+#define BLYNK_PRINT Serial
+ 
+#include <WiFi.h>
+#include <WiFiClient.h>
+#include <BlynkSimpleEsp32.h>
+
+
+char auth[] = " bcabdda4b78441108d2c21e5c042b02a"; //Blynkから送られてきたメール内にある Auth コード
+char ssid[] = "601HWa-93F526"; //ルーターの SSID home:Buffalo-G-B6D1
+char pass[] = "0478673a"; //ルーターのパスワード home:srnfvihira8sn
+
+int caseweigh;
+ 
+//const uint8_t LED_pin = 27; //LED GPIO #27
+//const uint8_t ADC_pin = 34; //AD converter GPIO #34
+//------------------------------------------------------------------------//
+
+
+float offset;
+int ans2;
+
+void setup() {
+  //roadcell------------------------------------------//
+  Serial.begin(9600);
+  Serial.println("AE_HX711 test");
+  AE_HX711_Init();
+  AE_HX711_Reset();
+  offset = AE_HX711_getGram(30);
+  //--------------------------------------------------//
+  
+
+  //7segment led-------------------------------------//
+  tm1637.init();
+  tm1637.set(BRIGHT_TYPICAL);//BRIGHT_TYPICAL = 2,BRIGHT_DARKEST = 0,BRIGHTEST = 7;
+  pinMode(26,OUTPUT);
+  //-------------------------------------------------//
+
+  //switch-------------------------------------------//
+  pinMode(switchpin,INPUT);
+  //-------------------------------------------------//
+
+
+  
+  //float data;
+  //char S1[20];
+  //char s[20];
+  //data = AE_HX711_getGram(5);
+  //sprintf(S1,"%s [g] (0x%4x)",dtostrf((data-offset), 5, 3, s),AE_HX711_Read()); //AE_HX711_Read()に格納された数字をS1に文字列して代入
+
+  Blynk.begin(auth, ssid, pass);  
+  sigmaDeltaSetup(0, 312500);
+}
+
+
+  //int val=digitalRead(switchpin);
+  // Serial.println(val);
+
+  
+  
+ 
+int S0;
+
+void loop() 
+{ 
+   Blynk.run();
+  
+  //switch-------------------------------------------------------//
+  int val=digitalRead(switchpin);
+  //Serial.println(val);
+  //-------------------------------------------------------------//
+ 
+    if(val==1){ //-----------------------------------------------------------switch on
+    digitalWrite(26,HIGH);
+    const long switchion=millis();
+      while(millis()<switchion+2000){  //-------------------------------------------------------untill 2s 
+      tm1637.display(0,8);
+      tm1637.display(1,8); //none
+      tm1637.display(2,8); //
+      tm1637.display(3,8); //
+      float data;
+      char S1[20];
+      char s[20];
+      data = AE_HX711_getGram(5);
+      sprintf(S1,"%s [g] (0x%4x)",dtostrf((data-offset), 5, 3, s),AE_HX711_Read()); //AE_HX711_Read()に格納された数字をS1に文字列して代入
+      S0=atoi(S1);
+      
+      if(val==0){
+        break;
+        }
+        
+      }
+    while(digitalRead(switchpin)==HIGH){  //------------------------------------------------on and 2s after
+
+    //roadcell--------------------------------------------------------//
+    float data;
+    char S1[20];
+    char s[20];
+    data = AE_HX711_getGram(5);
+    sprintf(S1,"%s [g] (0x%4x)",dtostrf((data-offset), 5, 3, s),AE_HX711_Read()); //AE_HX711_Read()に格納された数字をS1に文字列して代入    
+    int S2=atoi(S1);
+    int ans=S2-S0;
+    Serial.println(ans);//measurement mode
+   //---------------------------------------------------------------//
+
+    //7segument led------------------------------------------------------------//
+    int sousand;
+    sousand = ans/1000;
+    int hundred;
+    hundred = (ans-sousand*1000)/100;
+    int ten;
+    ten = (ans-sousand*100-hundred*100)/10;
+    int one;
+    one = (ans-sousand*1000-hundred*100-ten*10);
+    tm1637.display(0,sousand);
+    tm1637.display(1,hundred);
+    tm1637.display(2,ten);
+    tm1637.display(3,one); 
+    //-------------------------------------------------------------------------//
+     
+    if(val==0){
+      break;
+      }
+      
+    }
+   }else{         //---------------------------------------------------- watch over mode
+  //digitalWrite(26,LOW);
+  //roadcell--------------------------------------------------------//
+  float data;
+  char S1[20];
+  char s[20];
+  data = AE_HX711_getGram(5);
+  sprintf(S1,"%s [g] (0x%4x)",dtostrf((data-offset), 5, 3, s),AE_HX711_Read()); //AE_HX711_Read()に格納された数字をS1に文字列して代入
+  int S2=atoi(S1);
+  ans2=S2+
+  caseweigh; //watch over mode
+  Serial.println(ans2);
+  //---------------------------------------------------------------//
+
+  //7segument led------------------------------------------------------------//
+  tm1637.display(0,101); //38=none
+  tm1637.display(1,101);
+  tm1637.display(2,101);
+  tm1637.display(3,101);
+  //--------------------------------------------------------------------------//
+ }
+}
+
+
+
+
+
+
+
+//roadcell---------------------------------------------//
+void AE_HX711_Init(void)
+{
+  pinMode(pin_slk, OUTPUT);
+  pinMode(pin_dout, INPUT);
+}
+
+void AE_HX711_Reset(void)
+{
+  digitalWrite(pin_slk,1);
+  delayMicroseconds(100);
+  digitalWrite(pin_slk,0);
+  delayMicroseconds(100); 
+}
+
+long AE_HX711_Read(void) //値を読み込む
+{
+  long data=0;
+  while(digitalRead(pin_dout)!=0);
+  delayMicroseconds(10);
+  for(int i=0;i<24;i++)
+  {
+    digitalWrite(pin_slk,1);
+    delayMicroseconds(5);
+    digitalWrite(pin_slk,0);
+    delayMicroseconds(5);
+    data = (data<<1)|(digitalRead(pin_dout));
+  }
+  //Serial.println(data,HEX);   
+  digitalWrite(pin_slk,1);
+  delayMicroseconds(10);
+  digitalWrite(pin_slk,0);
+  delayMicroseconds(10);
+  return data^0x800000; 
+}
+
+
+long AE_HX711_Averaging(long adc,char num) //num回の平均をとる
+{
+  long sum = 0;
+  for (int i = 0; i < num; i++) sum += AE_HX711_Read();
+  return sum / num;
+}
+
+float AE_HX711_getGram(char num)
+{
+  #define HX711_R1  20000.0f
+  #define HX711_R2  8200.0f
+  #define HX711_VBG 1.25f
+  #define HX711_AVDD      4.2987f//(HX711_VBG*((HX711_R1+HX711_R2)/HX711_R2))
+  #define HX711_ADC1bit   HX711_AVDD/16777216 //16777216=(2^24)
+  #define HX711_PGA 128
+  #define HX711_SCALE     (OUT_VOL * HX711_AVDD / LOAD *HX711_PGA)
+  
+  float data;
+
+  data = AE_HX711_Averaging(AE_HX711_Read(),num)*HX711_ADC1bit; 
+  //Serial.println( HX711_AVDD);   
+  //Serial.println( HX711_ADC1bit);   
+  //Serial.println( HX711_SCALE);   
+  //Serial.println( data);   
+  data =  data / HX711_SCALE;
+
+
+  return data;
+}
+//-------------------------------------------------------------------//
+
+
+BLYNK_READ(V1)
+{
+  Blynk.virtualWrite(V1,ans2);
+  }
+
+BLYNK_WRITE(V2)
+{
+  caseweigh=param[0].asInt();
+  Serial.println(caseweigh);
+  }
+
